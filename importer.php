@@ -1,8 +1,6 @@
 <?php
 
-if(isset($_POST['apikey']) ){
-	echo $_POST['apikey'];
-}
+
 
 /*
 function ytVideos($pl){
