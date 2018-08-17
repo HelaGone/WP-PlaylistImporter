@@ -107,12 +107,8 @@ if(isset($_POST['apikey']) && isset($_POST['playlist_id']) && isset($_POST['cate
 	function argumentFn($apikey, $list_id, $catego){
 		$vList = ytVideos($apikey, $list_id);
 		$cat = $catego;
-
 		insertYoutubeVideoAsPost($vList, $cat);
-
-		// add_action('run_insert_post', 'insertYoutubeVideoAsPost', 10, 2);
-		// do_action('run_insert_post', $argument, $argument2);
-
+		// do_action('run_insert_post', $vList, $cat);
 	}//END argument Fn
 
 	function insertYoutubeVideoAsPost($videoList, $category){
@@ -128,27 +124,23 @@ if(isset($_POST['apikey']) && isset($_POST['playlist_id']) && isset($_POST['cate
 
 			if(!postExistBySlug($slug)){
 				// echo $video_ID.'<br>';
-
-				$postArr = array(
-					'post_type'=>'post',
-					'post_author'=>7,
-					'post_title'=>$video->snippet->title,
-					'post_name'=>$slug,
-					'post_content'=>$video->snippet->description,
-					'post_category'=> array($category),
-					'post_status'=>'publish'
-				);
-
 				if(is_user_logged_in()){
+					$postArr = array(
+						'post_type'=>'post',
+						'post_author'=>7,
+						'post_title'=>$video->snippet->title,
+						'post_name'=>$slug,
+						'post_content'=>$video->snippet->description,
+						'post_category'=> array($category),
+					);
 					$post_ID = wp_insert_post($postArr, true);
-					//UPDATE POST META
 
+					//UPDATE POST META
 					if($video_ID != ''){
 						update_post_meta($post_ID, 'hk_sources_youtube', $video_ID);
 					}
 
 					//UPLOAD & INSERT POST THUMBNAIL
-
 					$media = media_sideload_image($thumb_url, $post_ID);
 					if(!empty($media) && !is_wp_error($media)){
 					    $args = array(
@@ -191,6 +183,8 @@ if(isset($_POST['apikey']) && isset($_POST['playlist_id']) && isset($_POST['cate
 
 	add_action('argument_action', 'argumentFn', 10, 3);
 	do_action('argument_action', $the_apikey, $the_list_id, $the_categ);
+
+	add_action('run_insert_post', 'insertYoutubeVideoAsPost', 10, 2);
 }
 
 
