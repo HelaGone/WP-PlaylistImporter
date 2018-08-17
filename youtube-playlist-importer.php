@@ -9,6 +9,10 @@ Author URI:   https://cubeithebox.com
 License:      GPL2
 License URI:  https://www.gnu.org/licenses/gpl-2.0.html
 */
+require_once( ABSPATH . "wp-includes/pluggable.php" );
+require_once(ABSPATH . 'wp-admin/includes/media.php');
+require_once(ABSPATH . 'wp-admin/includes/file.php');
+require_once(ABSPATH . 'wp-admin/includes/image.php');
 
 define( 'WP_TYP_URL', trailingslashit( plugins_url( '', __FILE__ ) ) );
 // INCLUDE CSS FOR THE PLUGIN
@@ -64,46 +68,110 @@ function hk_setupMenu(){
 //PLUGIN GUI 
 function hk_inputFormData(){
 	echo '<h1>Import Youtube Videos</h1>';
-
 	echo '
 		<form id="hk_plugin_form" action="" method="post">
 			<label for="apikey">Youtube Api Key</label><br>
 			<input class="hk_input" type="text" name="apikey"><br>
 			<label for="playlist_id">Youtube Playlist ID</label><br>
 			<input class="hk_input" type="text" name="playlist_id"><br>
-			<label for="the_post_type">The post type to insert videos</label><br>
-			<input class="hk_input" type="text" name="the_post_type"><br>
 			<label for="cateory_id">Assign a category for the post <em>Must be the category ID</em></label><br>
 			<input class="hk_input" type="number" name="cateory_id"><br>
 			<button type="submit">Import Playlist Now</button>
 		</form>';
 }
 
-if(isset($_POST['apikey']) && isset($_POST['playlist_id']) && isset($_POST['the_post_type']) && isset($_POST['cateory_id']) ){
-	$apikey = $_POST['apikey'];
-	$playlist_ID = $_POST['playlist_id'];
-	$post_type = $_POST['the_post_type'];
-	$category_ID = $_POST['cateory_id'];
+if(isset($_POST['apikey']) && isset($_POST['playlist_id']) && isset($_POST['cateory_id']) ){
+	$the_apikey = $_POST['apikey'];
+	$the_list_id = $_POST['playlist_id'];
+	$the_categ = $_POST['cateory_id'];
 
-	echo $apikey.' - '.$playlist_ID.' - '.$post_type.' - '.$category_ID;
-	//MAIN FUNCTION - GET AND INSERT PLAYLIST VIDEOS FROM YOUTUBE
-	function ytVideos($_playlist, $_apikey){
-		$playlists = array(
-			'leitnait'=>'PLN-rg-jk5_jXFWQyyGfROfdPbxqtEF-q5',
-			'mornin'=>'PLN-rg-jk5_jVOYRGT_bc0i6LtFttBZOD6'
-		);
+	//YOUTUBE
+	function ytVideos($apiK, $plId){
+		// $playlists = array(
+		// 	'leitnait'=>'PLN-rg-jk5_jXFWQyyGfROfdPbxqtEF-q5',
+		// 	'mornin'=>'PLN-rg-jk5_jVOYRGT_bc0i6LtFttBZOD6'
+		// );
 		// $apikey = 'AIzaSyA2BYsmHfnIeoY5l2-DmeCyeo0uwAwwFZM';
-		$this_apikey = $_apikey;
-		$this_playlistID = $_playlist;
-		$this_apiUrl = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=25&playlistId='.$this_playlistID.'&key='.$this_apikey;
-		$this_playlist = json_decode(file_get_contents($this_apiUrl));
+		// $playlistID = $playlists[$pl];
 
-		return $this_playlist;
-	}//END yt Videos
+		$apikey = $apiK;
+		$playlistID = $plId;
 
-	// print_r();
-	$thevideoList = ytVideos($playlist_ID, $apikey);
-	// print_r($thevideoList);
+		$apiUrl = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=25&playlistId='.$playlistID.'&key='.$apikey;
+		$playlist = json_decode(file_get_contents($apiUrl));
+
+		return $playlist;
+	}//END ty Videos
+
+
+	function argumentFn($apikey, $list_id, $catego){
+		$vList = ytVideos($apikey, $list_id);
+		$cat = $catego;
+
+		insertYoutubeVideoAsPost($vList, $cat);
+
+		// add_action('run_insert_post', 'insertYoutubeVideoAsPost', 10, 2);
+		// do_action('run_insert_post', $argument, $argument2);
+
+	}//END argument Fn
+
+	function insertYoutubeVideoAsPost($videoList, $category){
+		$count = 0;
+		// $video = $videoList->items[1];
+		foreach ($videoList->items as $video):
+			# code...
+			$post_ID = -1;
+			$slug = sanitize_title($video->snippet->title);
+			$thumb_url = $video->snippet->thumbnails->maxres->url;
+			$video_ID = $video->snippet->resourceId->videoId;
+
+
+			if(!postExistBySlug($slug)){
+				// echo $video_ID.'<br>';
+
+				$postArr = array(
+					'post_type'=>'post',
+					'post_author'=>7,
+					'post_title'=>$video->snippet->title,
+					'post_name'=>$slug,
+					'post_content'=>$video->snippet->description,
+					'post_category'=> array($category),
+					'post_status'=>'publish'
+				);
+
+				if(is_user_logged_in()){
+					$post_ID = wp_insert_post($postArr, true);
+					//UPDATE POST META
+
+					if($video_ID != ''){
+						update_post_meta($post_ID, 'hk_sources_youtube', $video_ID);
+					}
+
+					//UPLOAD & INSERT POST THUMBNAIL
+
+					$media = media_sideload_image($thumb_url, $post_ID);
+					if(!empty($media) && !is_wp_error($media)){
+					    $args = array(
+					        'post_type' => 'attachment',
+					        'posts_per_page' => -1,
+					        'post_status' => 'any',
+					        'post_parent' => $post_ID
+					    );
+					    $attachments = get_posts($args);
+					    if(isset($attachments) && is_array($attachments)){
+					        foreach($attachments as $attachment){
+					            $image = wp_get_attachment_image_src($attachment->ID, 'full');
+					            if(strpos($media, $image[0]) !== false){
+					                set_post_thumbnail($post_ID, $attachment->ID);
+					                break;
+					            }
+					        }
+					    }
+					}
+				}//End is user is logged in
+			}
+		endforeach;
+	}//END insert Youtube Video As Post
 
 	function postExistBySlug($post_slug){
 		$args = array(
@@ -121,73 +189,9 @@ if(isset($_POST['apikey']) && isset($_POST['playlist_id']) && isset($_POST['the_
 		}
 	}//END post Exist By Slug
 
-	function insertYoutubeVideoAsPost($videoList, $categ, $pt){
-		$count = 0;
-		$video = $videoList->items[0];
-		// foreach ($videoList->items as $video):
-			$post_ID = -1;
-			$slug = sanitize_title($video->snippet->title);
-			$thumb_url = $video->snippet->thumbnails->maxres->url;
-
-			if(!postExistBySlug($slug)){
-				$postArr = array(
-					'post_type'=>$pt,
-					'post_author'=>7,
-					'post_title'=>$video->snippet->title,
-					'post_name'=>$slug,
-					'post_content'=>$video->snippet->description,
-					'post_category'=> array($categ)
-				);
-				$post_ID = wp_insert_post($postArr, true);
-
-				$media = media_sideload_image($thumb_url, $post_ID);
-
-				if(!empty($media) && !is_wp_error($media)){
-				    $args = array(
-				        'post_type' => 'attachment',
-				        'posts_per_page' => -1,
-				        'post_status' => 'any',
-				        'post_parent' => $post_ID
-				    );
-
-				    $attachments = get_posts($args);
-
-				    if(isset($attachments) && is_array($attachments)){
-				        foreach($attachments as $attachment){
-				            $image = wp_get_attachment_image_src($attachment->ID, 'full');
-				            if(strpos($media, $image[0]) !== false){
-				                set_post_thumbnail($post_ID, $attachment->ID);
-				                break;
-				            }
-				        }
-				    }
-				}
-
-			}
-		// endforeach;
-	}//END insert Youtube Video As Post
-
-	insertYoutubeVideoAsPost($thevideoList, $category_ID, $post_type); 
-
-
-
-
-}//END ISSET POST
-
-
-
-
-
-function argumentFn(){
-	$argument = ytVideos('mornin');
-	do_action('run_insert_post', $argument);
-}//END argument Fn
-
-// add_action('publish_post', 'argumentFn');
-// add_action('run_insert_post', 'insertYoutubeVideoAsPost');
-
-
-
+	add_action('argument_action', 'argumentFn', 10, 3);
+	do_action('argument_action', $the_apikey, $the_list_id, $the_categ);
+}
 
 
 
